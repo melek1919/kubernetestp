@@ -21,7 +21,7 @@ spec:
       imagePullSecrets:
         - name: ghcr-secret
       containers:
-        - name: mon-app
+        - name: demo-k8s
           image: ${IMAGE_TAG} 
           ports:
             - containerPort: 3000
