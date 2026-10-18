@@ -1,0 +1,10 @@
+{
+  "name": "demo-kubernetes",
+  "version": "1.0.0",
+  "description": "Application minimale pour le TP Kubernetes",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {}
+}
