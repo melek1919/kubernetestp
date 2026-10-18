@@ -3,25 +3,25 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch: 
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE: ghcr.io/${{ github.repository }}:${{ github.sha }}
+  APP_VERSION: ${{ github.sha }}
 
 jobs:
   build_image:
-    name: Build & Push Image
+    name: build
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Log in to the Container registry
+      - name: Login to Container Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -33,56 +33,38 @@ jobs:
         with:
           context: .
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          tags: ${{ env.IMAGE }}
 
   deploy_k8s:
-    name: Deploy to Kubernetes
-    needs: [build_image]
+    name: deploy
+    needs: build_image
     runs-on: ubuntu-latest
-    environment:
-      name: production
-    
-    # Équivalent du "when: manual" de GitLab : le déploiement attend une validation manuelle ou se lance sur demande
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
-
+    environment: production
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Environment Variables
+      - name: Install kubectl and gettext
         run: |
-          echo "IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" >> $GITHUB_ENV
-          echo "APP_VERSION=${{ github.sha }}" >> $GITHUB_ENV
+          sudo apt-get update
+          sudo apt-get install -y gettext-base
 
-      - name: Set up kubectl and gettext (for envsubst)
-        run: |
-          sudo apt-get update && sudo apt-get install -y gettext-base
-
-      - name: Authenticate to Kubernetes Cluster
+      - name: Authenticate to Kubernetes
         uses: azure/k8s-set-context@v4
         with:
           method: kubeconfig
           kubeconfig: ${{ secrets.KUBECONFIG }}
 
-      - name: Apply Manifests and Secrets
+      - name: Deploy to Kubernetes
         run: |
-          
           kubectl apply -f k8s/namespace.yaml
 
-         
           kubectl create secret docker-registry gitlab-registry \
             --docker-server=${{ env.REGISTRY }} \
             --docker-username=${{ github.actor }} \
             --docker-password=${{ secrets.GITHUB_TOKEN }} \
             -n demo --dry-run=client -o yaml | kubectl apply -f -
 
-          
           envsubst '${IMAGE} ${APP_VERSION}' < k8s/deployment.yaml | kubectl apply -f -
-
-          
           kubectl apply -f k8s/service.yaml
-
-          
           kubectl rollout status deployment/web -n demo --timeout=120s
